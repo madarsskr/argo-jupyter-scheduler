@@ -17,6 +17,7 @@ CONDA_STORE_SERVICE_NAMESPACE = "CONDA_STORE_SERVICE_NAMESPACE"
 
 CONDA_ENV_LOCATION = "/opt/conda/envs/{conda_env_name}"
 CONDA_STORE_ENV_LOCATION = "/home/conda/{env_namespace}/envs/{conda_env_name}"
+KUBERNETES_SERVICE_ACCOUNT_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 DEFAULT_ENV = "default"
 
 
@@ -51,23 +52,34 @@ logger = setup_logger(__name__)
 
 
 def authenticate():
-    namespace = os.environ["ARGO_NAMESPACE"]
-    if not namespace:
-        namespace = "dev"
+    namespace = os.environ.get("ARGO_NAMESPACE") or os.environ.get(
+        "POD_NAMESPACE", "dev"
+    )
 
-    token = os.environ["ARGO_TOKEN"]
+    token = os.environ.get("ARGO_TOKEN")
+    if not token and Path(KUBERNETES_SERVICE_ACCOUNT_TOKEN).is_file():
+        token = Path(KUBERNETES_SERVICE_ACCOUNT_TOKEN).read_text().strip()
+    if not token:
+        msg = "ARGO_TOKEN"
+        raise KeyError(msg)
     if token.startswith("Bearer"):
         token = token.split(" ")[-1]
 
-    base_href = os.environ["ARGO_BASE_HREF"]
+    base_href = os.environ.get("ARGO_BASE_HREF", "/")
     if not base_href.endswith("/"):
         base_href += "/"
 
-    server = f"https://{os.environ['ARGO_SERVER']}"
+    server = os.environ["ARGO_SERVER"]
+    if "://" not in server:
+        scheme = os.environ.get("ARGO_SERVER_SCHEME", "https")
+        server = f"{scheme}://{server}"
     host = urljoin(server, base_href)
 
     global_config.host = host
     global_config.token = token
+    global_config.verify_ssl = os.environ.get(
+        "ARGO_VERIFY_SSL", "true"
+    ).lower() not in {"0", "false", "no"}
     global_config.namespace = namespace
 
     return global_config
@@ -115,6 +127,39 @@ def gen_log_path(input_path: str):
 def gen_papermill_status_path(input_path: str):
     p = Path(input_path)
     return str(p.parent / "papermill_status.txt")
+
+
+def gen_pod_spec_patch(
+    image: str = "",
+    service_account_name: str = "",
+    pvc_name: str = "",
+    pvc_mount_path: str = "/home/jovyan",
+):
+    """Build an optional pod patch for non-Nebari workflow deployments."""
+    patch = {}
+
+    if service_account_name:
+        patch["serviceAccountName"] = service_account_name
+
+    if image or pvc_name:
+        container = {"name": "main"}
+        if image:
+            container["image"] = image
+        if pvc_name:
+            container["volumeMounts"] = [
+                {"name": "jupyter-user-home", "mountPath": pvc_mount_path}
+            ]
+        patch["containers"] = [container]
+
+    if pvc_name:
+        patch["volumes"] = [
+            {
+                "name": "jupyter-user-home",
+                "persistentVolumeClaim": {"claimName": pvc_name},
+            }
+        ]
+
+    return json.dumps(patch) if patch else None
 
 
 def send_request(api_v1_endpoint):
@@ -199,13 +244,15 @@ def gen_papermill_command_input(
     log_path: str,
     papermill_status_path: str,
     use_conda_store_env: bool = True,
+    use_conda_env: bool = True,
 ):
     # TODO: allow overrides
     kernel_name = "python3"
 
-    conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
-
-    logger.info(f"conda_env_path: {conda_env_path}")
+    conda_env_path = None
+    if use_conda_env:
+        conda_env_path = gen_conda_env_path(conda_env_name, use_conda_store_env)
+        logger.info(f"conda_env_path: {conda_env_path}")
     logger.info(f"output_path: {output_path}")
     logger.info(f"log_path: {log_path}")
     logger.info(f"html_path: {html_path}")
@@ -223,7 +270,11 @@ def gen_papermill_command_input(
     jupyter = f"jupyter nbconvert --to html {sq(output_path)} --output {sq(html_path)}"
 
     # It's important that inner quotes are single quotes to prevent shell expansion
-    return f"conda run -p '{conda_env_path}' /bin/sh -c '{{ {papermill} && {jupyter} ; }} >> {sq(log_path)} 2>&1'"
+    command = f"{{ {papermill} && {jupyter} ; }}"
+    if use_conda_env:
+        return f"conda run -p '{conda_env_path}' /bin/sh -c '{command} >> {sq(log_path)} 2>&1'"
+
+    return f"{command} >> {sq(log_path)} 2>&1"
 
 
 def sanitize_label(s: str):

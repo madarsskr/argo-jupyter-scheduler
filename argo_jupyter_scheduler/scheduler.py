@@ -22,6 +22,7 @@ from jupyter_scheduler.scheduler import Scheduler
 from jupyter_server.transutils import _i18n
 from traitlets import Bool, Instance
 from traitlets import Type as TType
+from traitlets import Unicode
 
 from argo_jupyter_scheduler.executor import ArgoExecutor
 from argo_jupyter_scheduler.task_runner import ArgoTaskRunner
@@ -35,6 +36,36 @@ class ArgoScheduler(Scheduler):
         default_value=False,
         config=True,
         help="Whether to check if conda environment is available from conda-store.",
+    )
+
+    use_conda_env = Bool(
+        default_value=True,
+        config=True,
+        help="Whether to execute notebook jobs through conda run.",
+    )
+
+    workflow_image = Unicode(
+        default_value="",
+        config=True,
+        help="Container image used for Argo workflow pods.",
+    )
+
+    workflow_service_account_name = Unicode(
+        default_value="",
+        config=True,
+        help="ServiceAccount used by Argo workflow pods.",
+    )
+
+    workflow_pvc_name = Unicode(
+        default_value="",
+        config=True,
+        help="PVC containing the user's Jupyter files.",
+    )
+
+    workflow_pvc_mount_path = Unicode(
+        default_value="/home/jovyan",
+        config=True,
+        help="Mount path for the user's Jupyter PVC.",
     )
 
     execution_manager_class = TType(
@@ -102,6 +133,11 @@ class ArgoScheduler(Scheduler):
                     root_dir=self.root_dir,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
+                    use_conda_env=self.use_conda_env,
+                    workflow_image=self.workflow_image,
+                    workflow_service_account_name=self.workflow_service_account_name,
+                    workflow_pvc_name=self.workflow_pvc_name,
+                    workflow_pvc_mount_path=self.workflow_pvc_mount_path,
                 ).process
             )
             p.start()
@@ -235,6 +271,11 @@ class ArgoScheduler(Scheduler):
                     schedule=job_definition.schedule,
                     timezone=job_definition.timezone,
                     use_conda_store_env=self.use_conda_store_env,
+                    use_conda_env=self.use_conda_env,
+                    workflow_image=self.workflow_image,
+                    workflow_service_account_name=self.workflow_service_account_name,
+                    workflow_pvc_name=self.workflow_pvc_name,
+                    workflow_pvc_mount_path=self.workflow_pvc_mount_path,
                 ).process
             )
             p.start()
@@ -305,6 +346,11 @@ class ArgoScheduler(Scheduler):
                     timezone=job_definition.timezone,
                     active=job_definition.active,
                     use_conda_store_env=self.use_conda_store_env,
+                    use_conda_env=self.use_conda_env,
+                    workflow_image=self.workflow_image,
+                    workflow_service_account_name=self.workflow_service_account_name,
+                    workflow_pvc_name=self.workflow_pvc_name,
+                    workflow_pvc_mount_path=self.workflow_pvc_mount_path,
                 ).process
             )
             p.start()

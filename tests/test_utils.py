@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-from argo_jupyter_scheduler.utils import authenticate
+from argo_jupyter_scheduler.utils import (
+    authenticate,
+    gen_papermill_command_input,
+    gen_pod_spec_patch,
+)
 
 
 @pytest.mark.parametrize(
@@ -63,3 +67,37 @@ def test_authenticate(
             assert config.namespace == expected_namespace
             assert config.token == expected_token
             assert config.host == expected_host
+
+
+def test_gen_papermill_command_without_conda():
+    command = gen_papermill_command_input(
+        conda_env_name="default",
+        input_path="/home/jovyan/work/input.ipynb",
+        output_path="/home/jovyan/work/output.ipynb",
+        html_path="/home/jovyan/work/output.html",
+        log_path="/home/jovyan/work/logs.txt",
+        papermill_status_path="/home/jovyan/work/papermill_status.txt",
+        use_conda_env=False,
+    )
+
+    assert "conda run" not in command
+    assert "papermill" in command
+    assert "jupyter nbconvert" in command
+
+
+def test_gen_pod_spec_patch_for_jupyterhub():
+    patch = gen_pod_spec_patch(
+        image="registry.example/notebook:1",
+        service_account_name="alice-workflows",
+        pvc_name="claim-alice",
+        pvc_mount_path="/home/jovyan",
+    )
+
+    assert patch == (
+        '{"serviceAccountName": "alice-workflows", '
+        '"containers": [{"name": "main", "image": '
+        '"registry.example/notebook:1", "volumeMounts": '
+        '[{"name": "jupyter-user-home", "mountPath": "/home/jovyan"}]}], '
+        '"volumes": [{"name": "jupyter-user-home", '
+        '"persistentVolumeClaim": {"claimName": "claim-alice"}}]}'
+    )

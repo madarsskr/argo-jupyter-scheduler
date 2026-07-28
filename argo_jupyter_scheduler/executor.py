@@ -25,6 +25,7 @@ from argo_jupyter_scheduler.utils import (
     gen_log_path,
     gen_papermill_command_input,
     gen_papermill_status_path,
+    gen_pod_spec_patch,
     gen_workflow_name,
     sanitize_label,
     setup_logger,
@@ -49,6 +50,11 @@ class ArgoExecutor(ExecutionManager):
         timezone: Union[str, None] = None,
         active: bool = True,
         use_conda_store_env: bool = False,
+        use_conda_env: bool = True,
+        workflow_image: str = "",
+        workflow_service_account_name: str = "",
+        workflow_pvc_name: str = "",
+        workflow_pvc_mount_path: str = "/home/jovyan",
     ):
         self.root_dir = root_dir
         self.db_url = db_url
@@ -61,6 +67,11 @@ class ArgoExecutor(ExecutionManager):
         self.timezone = timezone
         self.active = active
         self.use_conda_store_env = use_conda_store_env
+        self.use_conda_env = use_conda_env
+        self.workflow_image = workflow_image
+        self.workflow_service_account_name = workflow_service_account_name
+        self.workflow_pvc_name = workflow_pvc_name
+        self.workflow_pvc_mount_path = workflow_pvc_mount_path
 
         if (
             not self.job_id
@@ -101,6 +112,11 @@ class ArgoExecutor(ExecutionManager):
                     staging_paths=self.staging_paths,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
+                    use_conda_env=self.use_conda_env,
+                    workflow_image=self.workflow_image,
+                    workflow_service_account_name=self.workflow_service_account_name,
+                    workflow_pvc_name=self.workflow_pvc_name,
+                    workflow_pvc_mount_path=self.workflow_pvc_mount_path,
                 )
 
             elif self.action == WorkflowActionsEnum.delete:
@@ -123,6 +139,11 @@ class ArgoExecutor(ExecutionManager):
                     timezone=self.timezone,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
+                    use_conda_env=self.use_conda_env,
+                    workflow_image=self.workflow_image,
+                    workflow_service_account_name=self.workflow_service_account_name,
+                    workflow_pvc_name=self.workflow_pvc_name,
+                    workflow_pvc_mount_path=self.workflow_pvc_mount_path,
                 )
             elif self.action == WorkflowActionsEnum.update:
                 self.update_cron_workflow(
@@ -185,6 +206,11 @@ class ArgoExecutor(ExecutionManager):
         staging_paths: Dict,
         db_url: str,
         use_conda_store_env: bool = True,
+        use_conda_env: bool = True,
+        workflow_image: str = "",
+        workflow_service_account_name: str = "",
+        workflow_pvc_name: str = "",
+        workflow_pvc_mount_path: str = "/home/jovyan",
     ):
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
@@ -200,12 +226,20 @@ class ArgoExecutor(ExecutionManager):
         logger.info(f"staging paths: {staging_paths}")
 
         labels = {
-            "jupyterflow-override": "true",
             "jupyter-scheduler-job-id": job.job_id,
             "workflows.argoproj.io/creator-preferred-username": sanitize_label(
-                os.environ["PREFERRED_USERNAME"]
+                os.environ.get(
+                    "PREFERRED_USERNAME",
+                    os.environ.get(
+                        "JUPYTERHUB_USER", os.environ.get("USER", "unknown")
+                    ),
+                )
             ),
         }
+        if not any(
+            (workflow_image, workflow_service_account_name, workflow_pvc_name)
+        ):
+            labels["jupyterflow-override"] = "true"
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
             seconds_after_success=DEFAULT_TTL,
@@ -220,6 +254,12 @@ class ArgoExecutor(ExecutionManager):
             entrypoint="steps",
             labels=labels,
             ttl_strategy=ttl_strategy,
+            pod_spec_patch=gen_pod_spec_patch(
+                image=workflow_image,
+                service_account_name=workflow_service_account_name,
+                pvc_name=workflow_pvc_name,
+                pvc_mount_path=workflow_pvc_mount_path,
+            ),
         ) as w:
             main = main_container(
                 job=job,
@@ -228,6 +268,7 @@ class ArgoExecutor(ExecutionManager):
                 log_path=log_path,
                 papermill_status_path=papermill_status_path,
                 parameters=parameters,
+                use_conda_env=use_conda_env,
             )
 
             with Steps(name="steps"):
@@ -345,6 +386,11 @@ class ArgoExecutor(ExecutionManager):
         db_url: str,
         active: bool = True,
         use_conda_store_env: bool = True,
+        use_conda_env: bool = True,
+        workflow_image: str = "",
+        workflow_service_account_name: str = "",
+        workflow_pvc_name: str = "",
+        workflow_pvc_mount_path: str = "/home/jovyan",
     ):
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
@@ -360,12 +406,20 @@ class ArgoExecutor(ExecutionManager):
         logger.info(f"staging paths: {staging_paths}")
 
         labels = {
-            "jupyterflow-override": "true",
             "jupyter-scheduler-job-definition-id": job_definition_id,
             "workflows.argoproj.io/creator-preferred-username": sanitize_label(
-                os.environ["PREFERRED_USERNAME"]
+                os.environ.get(
+                    "PREFERRED_USERNAME",
+                    os.environ.get(
+                        "JUPYTERHUB_USER", os.environ.get("USER", "unknown")
+                    ),
+                )
             ),
         }
+        if not any(
+            (workflow_image, workflow_service_account_name, workflow_pvc_name)
+        ):
+            labels["jupyterflow-override"] = "true"
 
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
@@ -395,6 +449,12 @@ class ArgoExecutor(ExecutionManager):
             cron_suspend=suspend,
             labels=labels,
             ttl_strategy=ttl_strategy,
+            pod_spec_patch=gen_pod_spec_patch(
+                image=workflow_image,
+                service_account_name=workflow_service_account_name,
+                pvc_name=workflow_pvc_name,
+                pvc_mount_path=workflow_pvc_mount_path,
+            ),
         ) as cwf:
             main = main_container(
                 job=job,
@@ -403,6 +463,7 @@ class ArgoExecutor(ExecutionManager):
                 log_path=log_path,
                 papermill_status_path=papermill_status_path,
                 parameters=parameters,
+                use_conda_env=use_conda_env,
             )
 
             with Steps(name="steps"):
@@ -483,6 +544,11 @@ class ArgoExecutor(ExecutionManager):
         timezone: str,
         db_url: str,
         use_conda_store_env: bool = True,
+        use_conda_env: bool = True,
+        workflow_image: str = "",
+        workflow_service_account_name: str = "",
+        workflow_pvc_name: str = "",
+        workflow_pvc_mount_path: str = "/home/jovyan",
     ):
         authenticate()
 
@@ -497,6 +563,11 @@ class ArgoExecutor(ExecutionManager):
             timezone=timezone,
             db_url=db_url,
             use_conda_store_env=use_conda_store_env,
+            use_conda_env=use_conda_env,
+            workflow_image=workflow_image,
+            workflow_service_account_name=workflow_service_account_name,
+            workflow_pvc_name=workflow_pvc_name,
+            workflow_pvc_mount_path=workflow_pvc_mount_path,
         )
 
         w.create()
@@ -533,6 +604,11 @@ class ArgoExecutor(ExecutionManager):
         active: bool,
         db_url: str,
         use_conda_store_env: bool = True,
+        use_conda_env: bool = True,
+        workflow_image: str = "",
+        workflow_service_account_name: str = "",
+        workflow_pvc_name: str = "",
+        workflow_pvc_mount_path: str = "/home/jovyan",
     ):
         authenticate()
 
@@ -560,6 +636,11 @@ class ArgoExecutor(ExecutionManager):
             db_url=db_url,
             active=active,
             use_conda_store_env=use_conda_store_env,
+            use_conda_env=use_conda_env,
+            workflow_image=workflow_image,
+            workflow_service_account_name=workflow_service_account_name,
+            workflow_pvc_name=workflow_pvc_name,
+            workflow_pvc_mount_path=workflow_pvc_mount_path,
         )
 
         try:
@@ -575,7 +656,13 @@ class ArgoExecutor(ExecutionManager):
 
 
 def main_container(
-    job, use_conda_store_env, input_path, log_path, papermill_status_path, parameters
+    job,
+    use_conda_store_env,
+    input_path,
+    log_path,
+    papermill_status_path,
+    parameters,
+    use_conda_env,
 ):
     envs = []
     if parameters is not None:
@@ -593,6 +680,7 @@ def main_container(
         log_path=log_path,
         papermill_status_path=papermill_status_path,
         use_conda_store_env=use_conda_store_env,
+        use_conda_env=use_conda_env,
     )
 
     return Container(

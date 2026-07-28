@@ -32,6 +32,45 @@ Submit long-running notebooks to run without the need to keep your JupyterLab se
 pip install argo-jupyter-scheduler
 ```
 
+### Generic JupyterHub images
+
+The workflow templates can execute through the Python environment already
+present in the workflow image. This is useful when the image is not managed by
+Conda Store:
+
+```python
+c.SchedulerApp.scheduler_class = (
+    "argo_jupyter_scheduler.scheduler.ArgoScheduler"
+)
+c.ArgoScheduler.use_conda_env = False
+c.ArgoScheduler.use_conda_store_env = False
+c.ArgoScheduler.workflow_image = (
+    "eu.gcr.io/twino-env-213510/jupyter/datascience-notebook:<tag>"
+)
+c.ArgoScheduler.workflow_service_account_name = "<user-workflow-service-account>"
+c.ArgoScheduler.workflow_pvc_name = "<user-jupyter-pvc>"
+c.ArgoScheduler.workflow_pvc_mount_path = "/home/jovyan"
+```
+
+For Kubernetes ServiceAccount authentication, set `ARGO_SERVER` and
+`ARGO_NAMESPACE` in the JupyterHub server environment and grant that
+ServiceAccount access to the user's Argo resources. If `ARGO_TOKEN` is not
+set, the extension uses the token mounted at the standard Kubernetes
+ServiceAccount path. `ARGO_SERVER_SCHEME` can be set to `http` for an
+internal Argo Server endpoint. `ARGO_VERIFY_SSL=false` can be used only for
+an isolated smoke test when Argo Server uses its generated self-signed
+certificate. Production deployments should use a trusted Argo Server
+certificate and leave verification enabled.
+
+When `use_conda_env` is disabled, the workflow runs `papermill` and
+`jupyter nbconvert` directly from the selected image instead of invoking
+`conda run` or querying Conda Store. The workflow image must contain both
+commands and the notebook's kernel dependencies.
+
+When a workflow image, ServiceAccount, and PVC are configured, they are
+written into the Argo workflow pod specification. This replaces the Nebari
+Workflow Controller's implicit pod mutation for a generic JupyterHub setup.
+
 ## What is it?
 
 Argo-Jupyter-Scheduler is a plugin to the [Jupyter-Scheduler](https://jupyter-scheduler.readthedocs.io/en/latest/index.html) JupyterLab extension.
