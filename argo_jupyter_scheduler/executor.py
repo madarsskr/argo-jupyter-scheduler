@@ -236,9 +236,7 @@ class ArgoExecutor(ExecutionManager):
                 )
             ),
         }
-        if not any(
-            (workflow_image, workflow_service_account_name, workflow_pvc_name)
-        ):
+        if not any((workflow_image, workflow_service_account_name, workflow_pvc_name)):
             labels["jupyterflow-override"] = "true"
         ttl_strategy = TTLStrategy(
             seconds_after_completion=DEFAULT_TTL,
@@ -416,9 +414,7 @@ class ArgoExecutor(ExecutionManager):
                 )
             ),
         }
-        if not any(
-            (workflow_image, workflow_service_account_name, workflow_pvc_name)
-        ):
+        if not any((workflow_image, workflow_service_account_name, workflow_pvc_name)):
             labels["jupyterflow-override"] = "true"
 
         ttl_strategy = TTLStrategy(

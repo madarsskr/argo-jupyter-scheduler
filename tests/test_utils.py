@@ -81,6 +81,7 @@ def test_gen_papermill_command_without_conda():
     )
 
     assert "conda run" not in command
+    assert "'\\''" not in command
     assert "papermill" in command
     assert "jupyter nbconvert" in command
 

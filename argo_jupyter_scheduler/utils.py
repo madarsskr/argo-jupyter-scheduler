@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import shlex
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urljoin
@@ -258,7 +259,21 @@ def gen_papermill_command_input(
     logger.info(f"html_path: {html_path}")
     logger.info(f"papermill_status_path: {papermill_status_path}")
 
-    # Within a single-quoted string, wraps the string in single quotes
+    if not use_conda_env:
+        quote = shlex.quote
+        papermill = (
+            f"( papermill -k {quote(kernel_name)} {quote(input_path)} "
+            f"{quote(output_path)} ; ec=$? ; echo $ec > "
+            f"{quote(papermill_status_path)} ; exit $ec )"
+        )
+        jupyter = (
+            f"jupyter nbconvert --to html {quote(output_path)} "
+            f"--output {quote(html_path)}"
+        )
+        redirection = f">> {quote(log_path)} 2>&1"
+        return f"{{ {papermill} && {jupyter} ; }} {redirection}"
+
+    # Within a single-quoted string, wraps strings in shell-safe quotes.
     def sq(s):
         return rf"'\''{s}'\''"
 
@@ -271,10 +286,9 @@ def gen_papermill_command_input(
 
     # It's important that inner quotes are single quotes to prevent shell expansion
     command = f"{{ {papermill} && {jupyter} ; }}"
-    if use_conda_env:
-        return f"conda run -p '{conda_env_path}' /bin/sh -c '{command} >> {sq(log_path)} 2>&1'"
-
-    return f"{command} >> {sq(log_path)} 2>&1"
+    return (
+        f"conda run -p '{conda_env_path}' /bin/sh -c '{command} >> {sq(log_path)} 2>&1'"
+    )
 
 
 def sanitize_label(s: str):
