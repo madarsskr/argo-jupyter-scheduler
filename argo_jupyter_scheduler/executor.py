@@ -34,6 +34,7 @@ from argo_jupyter_scheduler.utils import (
 logger = setup_logger(__name__)
 
 DEFAULT_TTL = 600
+DEFAULT_SCRIPT_IMAGE = os.environ.get("ARGO_WORKFLOW_IMAGE", "python:3.10")
 
 
 class ArgoExecutor(ExecutionManager):
@@ -687,7 +688,7 @@ def main_container(
     )
 
 
-@script()
+@script(image=DEFAULT_SCRIPT_IMAGE)
 def update_job_status_failure(
     db_url, log_path, papermill_status_path, job_id=None, job_definition_id=None
 ):
@@ -734,7 +735,7 @@ def update_job_status_failure(
         session.commit()
 
 
-@script()
+@script(image=DEFAULT_SCRIPT_IMAGE)
 def update_job_status_success(db_url, job_id=None, job_definition_id=None):
     from jupyter_scheduler.models import Status
     from jupyter_scheduler.orm import Job, create_session
@@ -759,7 +760,7 @@ def update_job_status_success(db_url, job_id=None, job_definition_id=None):
         session.commit()
 
 
-@script()
+@script(image=DEFAULT_SCRIPT_IMAGE)
 def create_job_record(
     model,
     db_url,
@@ -795,7 +796,7 @@ def create_job_record(
         session.commit()
 
 
-@script()
+@script(image=DEFAULT_SCRIPT_IMAGE)
 def rename_files(db_url, job_definition_id, input_path, log_path, start_time):
     import os
 
@@ -864,7 +865,7 @@ def get_slack_token_channel(parameters):
     return token, channel
 
 
-@script()
+@script(image=DEFAULT_SCRIPT_IMAGE)
 def send_to_slack(
     db_url, job_definition_id, input_path, start_time, token, channel, log_path
 ):
