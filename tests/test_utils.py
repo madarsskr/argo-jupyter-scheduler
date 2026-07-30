@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+from argo_jupyter_scheduler.executor import main_container
 from argo_jupyter_scheduler.utils import (
     authenticate,
     gen_papermill_command_input,
@@ -102,3 +103,18 @@ def test_gen_pod_spec_patch_for_jupyterhub():
         '"volumes": [{"name": "jupyter-user-home", '
         '"persistentVolumeClaim": {"claimName": "claim-alice"}}]}'
     )
+
+
+def test_main_container_uses_configured_image():
+    container = main_container(
+        job=type("Job", (), {"runtime_environment_name": "default"})(),
+        use_conda_store_env=False,
+        input_path="/home/jovyan/input.ipynb",
+        log_path="/home/jovyan/logs.txt",
+        papermill_status_path="/home/jovyan/status.txt",
+        parameters=None,
+        use_conda_env=False,
+        workflow_image="registry.example/notebook:1",
+    )
+
+    assert container.image == "registry.example/notebook:1"

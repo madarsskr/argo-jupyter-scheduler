@@ -31,39 +31,50 @@ from argo_jupyter_scheduler.utils import WorkflowActionsEnum, setup_logger
 logger = setup_logger(__name__)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
 class ArgoScheduler(Scheduler):
     use_conda_store_env = Bool(
-        default_value=False,
+        default_value=_env_bool("ARGO_USE_CONDA_STORE_ENV", False),
         config=True,
         help="Whether to check if conda environment is available from conda-store.",
     )
 
     use_conda_env = Bool(
-        default_value=True,
+        default_value=_env_bool(
+            "ARGO_USE_CONDA_ENV", not bool(os.environ.get("ARGO_WORKFLOW_IMAGE"))
+        ),
         config=True,
         help="Whether to execute notebook jobs through conda run.",
     )
 
     workflow_image = Unicode(
-        default_value="",
+        default_value=os.environ.get("ARGO_WORKFLOW_IMAGE", ""),
         config=True,
         help="Container image used for Argo workflow pods.",
     )
 
     workflow_service_account_name = Unicode(
-        default_value="",
+        default_value=os.environ.get("ARGO_WORKFLOW_SERVICE_ACCOUNT", ""),
         config=True,
         help="ServiceAccount used by Argo workflow pods.",
     )
 
     workflow_pvc_name = Unicode(
-        default_value="",
+        default_value=os.environ.get("ARGO_WORKFLOW_PVC_NAME", ""),
         config=True,
         help="PVC containing the user's Jupyter files.",
     )
 
     workflow_pvc_mount_path = Unicode(
-        default_value="/home/jovyan",
+        default_value=os.environ.get(
+            "ARGO_WORKFLOW_PVC_MOUNT_PATH", "/home/jovyan"
+        ),
         config=True,
         help="Mount path for the user's Jupyter PVC.",
     )

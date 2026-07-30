@@ -268,6 +268,7 @@ class ArgoExecutor(ExecutionManager):
                 papermill_status_path=papermill_status_path,
                 parameters=parameters,
                 use_conda_env=use_conda_env,
+                workflow_image=workflow_image,
             )
 
             with Steps(name="steps"):
@@ -461,6 +462,7 @@ class ArgoExecutor(ExecutionManager):
                 papermill_status_path=papermill_status_path,
                 parameters=parameters,
                 use_conda_env=use_conda_env,
+                workflow_image=workflow_image,
             )
 
             with Steps(name="steps"):
@@ -660,6 +662,7 @@ def main_container(
     papermill_status_path,
     parameters,
     use_conda_env,
+    workflow_image="",
 ):
     envs = []
     if parameters is not None:
@@ -682,6 +685,7 @@ def main_container(
 
     return Container(
         name="main",
+        image=workflow_image or DEFAULT_SCRIPT_IMAGE,
         command=["/bin/sh"],
         args=["-c", cmd_args],
         env=envs,
