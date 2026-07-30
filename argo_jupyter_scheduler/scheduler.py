@@ -1,6 +1,7 @@
 import os
 import shutil
 from multiprocessing import Process
+from threading import Thread
 
 import psutil
 from hera.workflows.service import WorkflowsService
@@ -120,12 +121,15 @@ class ArgoScheduler(Scheduler):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        Thread(target=self._reconcile_active_job_definitions, daemon=True).start()
+
+    def _ensure_workflow_pvc_name(self):
         if not self.workflow_pvc_name:
             self.workflow_pvc_name = resolve_workflow_pvc_name()
-        self._reconcile_active_job_definitions()
 
     def _reconcile_active_job_definitions(self):
         try:
+            self._ensure_workflow_pvc_name()
             global_config = authenticate()
             workflows_service = WorkflowsService()
             with self.db_session() as session:
@@ -180,6 +184,7 @@ class ArgoScheduler(Scheduler):
             logger.exception("Failed to reconcile active job definitions")
 
     def create_job(self, model: CreateJob) -> str:
+        self._ensure_workflow_pvc_name()
         if not model.job_definition_id and not self.file_exists(model.input_uri):
             raise InputUriError(model.input_uri)
 
@@ -327,6 +332,7 @@ class ArgoScheduler(Scheduler):
 
     def create_job_definition(self, model: CreateJobDefinition) -> str:
         logger.info("ArgoScheduler.create_job_definition")
+        self._ensure_workflow_pvc_name()
         with self.db_session() as session:
             if not self.file_exists(model.input_uri):
                 raise InputUriError(model.input_uri)
@@ -376,6 +382,7 @@ class ArgoScheduler(Scheduler):
 
     def update_job_definition(self, job_definition_id: str, model: UpdateJobDefinition):
         logger.info("ArgoScheduler.update_job_definition")
+        self._ensure_workflow_pvc_name()
         with self.db_session() as session:
             filtered_query = session.query(JobDefinition).filter(
                 JobDefinition.job_definition_id == job_definition_id

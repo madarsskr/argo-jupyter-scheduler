@@ -106,7 +106,11 @@ def resolve_workflow_pvc_name():
         f"?labelSelector={label_selector}"
     )
     ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-    http = urllib3.PoolManager(cert_reqs="CERT_REQUIRED", ca_certs=ca_path)
+    http = urllib3.PoolManager(
+        cert_reqs="CERT_REQUIRED",
+        ca_certs=ca_path,
+        timeout=urllib3.Timeout(connect=2.0, read=5.0),
+    )
     response = http.request(
         "GET",
         url,
