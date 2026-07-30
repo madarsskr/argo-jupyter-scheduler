@@ -1,4 +1,5 @@
-from unittest.mock import patch
+import json
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -8,6 +9,7 @@ from argo_jupyter_scheduler.utils import (
     gen_cron_workflow_name,
     gen_papermill_command_input,
     gen_pod_spec_patch,
+    resolve_workflow_pvc_name,
 )
 
 
@@ -128,3 +130,29 @@ def test_gen_cron_workflow_name_includes_definition_name():
         )
         == "job-def-scheduler-test-d66120ed-eed8"
     )
+
+
+def test_resolve_workflow_pvc_name_from_user_label(tmp_path):
+    token_path = tmp_path / "token"
+    token_path.write_text("token")
+    pool = Mock()
+    pool.request.return_value.status = 200
+    pool.request.return_value.data = json.dumps(
+        {"items": [{"metadata": {"name": "claim-alice---abcd1234"}}]}
+    ).encode()
+
+    with patch.dict(
+        "os.environ",
+        {
+            "JUPYTERHUB_USER": "alice",
+            "ARGO_NAMESPACE": "jupyterhub",
+            "ARGO_WORKFLOW_PVC_NAME": "",
+            "KUBERNETES_SERVICE_HOST": "kubernetes.default.svc",
+            "KUBERNETES_SERVICE_PORT_HTTPS": "443",
+        },
+        clear=False,
+    ), patch(
+        "argo_jupyter_scheduler.utils.KUBERNETES_SERVICE_ACCOUNT_TOKEN",
+        str(token_path),
+    ), patch("argo_jupyter_scheduler.utils.urllib3.PoolManager", return_value=pool):
+        assert resolve_workflow_pvc_name() == "claim-alice---abcd1234"

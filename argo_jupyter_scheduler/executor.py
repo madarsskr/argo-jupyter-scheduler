@@ -34,7 +34,12 @@ from argo_jupyter_scheduler.utils import (
 logger = setup_logger(__name__)
 
 DEFAULT_TTL = 600
-DEFAULT_SCRIPT_IMAGE = os.environ.get("ARGO_WORKFLOW_IMAGE", "python:3.10")
+DEFAULT_SCRIPT_IMAGE = os.environ.get(
+    "JUPYTER_IMAGE",
+    os.environ.get(
+        "JUPYTER_IMAGE_SPEC", os.environ.get("ARGO_WORKFLOW_IMAGE", "python:3.10")
+    ),
+)
 
 
 class ArgoExecutor(ExecutionManager):
@@ -584,26 +589,17 @@ class ArgoExecutor(ExecutionManager):
                 .filter(JobDefinition.job_definition_id == job_definition_id)
                 .first()
             )
-        names = [
-            gen_cron_workflow_name(
-                job_definition_id,
-                job_definition.name if job_definition else "",
-            ),
-            f"job-def-{job_definition_id}",
-        ]
+        name = gen_cron_workflow_name(
+            job_definition_id,
+            job_definition.name if job_definition else "",
+        )
 
         try:
             wfs = WorkflowsService()
-            for name in dict.fromkeys(names):
-                try:
-                    wfs.delete_cron_workflow(
-                        name=name,
-                        namespace=global_config.namespace,
-                    )
-                    break
-                except Exception as e:
-                    if name == names[-1]:
-                        raise e
+            wfs.delete_cron_workflow(
+                name=name,
+                namespace=global_config.namespace,
+            )
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):
@@ -665,14 +661,7 @@ class ArgoExecutor(ExecutionManager):
         try:
             w.update()
         except Exception as e:
-            legacy_name = f"job-def-{job_definition_id}"
-            if w.name != legacy_name:
-                w.name = legacy_name
-                try:
-                    w.update()
-                except Exception:
-                    raise e
-            elif str(e).startswith("Server returned status code"):
+            if str(e).startswith("Server returned status code"):
                 logger.info(e)
             else:
                 raise e

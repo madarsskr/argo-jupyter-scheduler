@@ -39,18 +39,26 @@ present in the workflow image. This is useful when the image is not managed by
 Conda Store:
 
 ```python
+import os
+
 c.SchedulerApp.scheduler_class = (
     "argo_jupyter_scheduler.scheduler.ArgoScheduler"
 )
 c.ArgoScheduler.use_conda_env = False
 c.ArgoScheduler.use_conda_store_env = False
 c.ArgoScheduler.workflow_image = (
-    "eu.gcr.io/twino-env-213510/jupyter/datascience-notebook:<tag>"
+    os.environ.get("JUPYTER_IMAGE", "eu.gcr.io/twino-env-213510/jupyter/datascience-notebook:<tag>")
 )
 c.ArgoScheduler.workflow_service_account_name = "<user-workflow-service-account>"
-c.ArgoScheduler.workflow_pvc_name = "<user-jupyter-pvc>"
 c.ArgoScheduler.workflow_pvc_mount_path = "/home/jovyan"
 ```
+
+If `workflow_image` is not set explicitly, the scheduler uses the current
+`JUPYTER_IMAGE` or `JUPYTER_IMAGE_SPEC` value. If `workflow_pvc_name` is not
+set, it resolves the user's PVC from the Kubernetes label
+`hub.jupyter.org/username`. The workflow ServiceAccount therefore needs
+`get` and `list` access to `persistentvolumeclaims`; an example Role and
+RoleBinding is in `jupyter-workflow-pvc-reader.yaml`.
 
 For Kubernetes ServiceAccount authentication, set `ARGO_SERVER` and
 `ARGO_NAMESPACE` in the JupyterHub server environment and grant that

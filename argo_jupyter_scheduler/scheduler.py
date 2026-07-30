@@ -3,6 +3,7 @@ import shutil
 from multiprocessing import Process
 
 import psutil
+from hera.workflows.service import WorkflowsService
 from jupyter_scheduler.exceptions import (
     IdempotencyTokenError,
     InputUriError,
@@ -26,7 +27,13 @@ from traitlets import Unicode
 
 from argo_jupyter_scheduler.executor import ArgoExecutor
 from argo_jupyter_scheduler.task_runner import ArgoTaskRunner
-from argo_jupyter_scheduler.utils import WorkflowActionsEnum, setup_logger
+from argo_jupyter_scheduler.utils import (
+    WorkflowActionsEnum,
+    authenticate,
+    gen_cron_workflow_name,
+    resolve_workflow_pvc_name,
+    setup_logger,
+)
 
 logger = setup_logger(__name__)
 
@@ -47,14 +54,24 @@ class ArgoScheduler(Scheduler):
 
     use_conda_env = Bool(
         default_value=_env_bool(
-            "ARGO_USE_CONDA_ENV", not bool(os.environ.get("ARGO_WORKFLOW_IMAGE"))
+            "ARGO_USE_CONDA_ENV",
+            not bool(
+                os.environ.get("JUPYTER_IMAGE")
+                or os.environ.get("JUPYTER_IMAGE_SPEC")
+                or os.environ.get("ARGO_WORKFLOW_IMAGE")
+            ),
         ),
         config=True,
         help="Whether to execute notebook jobs through conda run.",
     )
 
     workflow_image = Unicode(
-        default_value=os.environ.get("ARGO_WORKFLOW_IMAGE", ""),
+        default_value=os.environ.get(
+            "JUPYTER_IMAGE",
+            os.environ.get(
+                "JUPYTER_IMAGE_SPEC", os.environ.get("ARGO_WORKFLOW_IMAGE", "")
+            ),
+        ),
         config=True,
         help="Container image used for Argo workflow pods.",
     )
@@ -66,7 +83,7 @@ class ArgoScheduler(Scheduler):
     )
 
     workflow_pvc_name = Unicode(
-        default_value=os.environ.get("ARGO_WORKFLOW_PVC_NAME", ""),
+        default_value="",
         config=True,
         help="PVC containing the user's Jupyter files.",
     )
@@ -100,6 +117,67 @@ class ArgoScheduler(Scheduler):
     task_runner = Instance(
         allow_none=True, klass="jupyter_scheduler.task_runner.BaseTaskRunner"
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.workflow_pvc_name:
+            self.workflow_pvc_name = resolve_workflow_pvc_name()
+        self._reconcile_active_job_definitions()
+
+    def _reconcile_active_job_definitions(self):
+        try:
+            global_config = authenticate()
+            workflows_service = WorkflowsService()
+            with self.db_session() as session:
+                definitions = [
+                    DescribeJobDefinition.from_orm(job_definition)
+                    for job_definition in session.query(JobDefinition)
+                    .filter(JobDefinition.active.is_(True))
+                    .all()
+                ]
+
+            for job_definition in definitions:
+                name = gen_cron_workflow_name(
+                    job_definition.job_definition_id, job_definition.name
+                )
+                exists = False
+                try:
+                    workflows_service.get_cron_workflow(
+                        name=name, namespace=global_config.namespace
+                    )
+                    exists = True
+                except Exception as e:
+                    if "404" not in str(e):
+                        raise
+
+                if exists:
+                    continue
+
+                staging_paths = self.get_staging_paths(job_definition)
+                logger.warning(
+                    "Recreating missing CronWorkflow for active job definition %s",
+                    job_definition.job_definition_id,
+                )
+                Process(
+                    target=self.execution_manager_class(
+                        action=WorkflowActionsEnum.create,
+                        staging_paths=staging_paths,
+                        root_dir=self.root_dir,
+                        db_url=self.db_url,
+                        job_definition_id=job_definition.job_definition_id,
+                        parameters=job_definition.parameters,
+                        schedule=job_definition.schedule,
+                        timezone=job_definition.timezone,
+                        use_conda_store_env=self.use_conda_store_env,
+                        use_conda_env=self.use_conda_env,
+                        workflow_image=self.workflow_image,
+                        workflow_service_account_name=self.workflow_service_account_name,
+                        workflow_pvc_name=self.workflow_pvc_name,
+                        workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                    ).process
+                ).start()
+        except Exception:
+            logger.exception("Failed to reconcile active job definitions")
 
     def create_job(self, model: CreateJob) -> str:
         if not model.job_definition_id and not self.file_exists(model.input_uri):

@@ -5,7 +5,7 @@ import re
 import shlex
 from enum import Enum
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import urllib3
 from hera.shared import global_config
@@ -84,6 +84,45 @@ def authenticate():
     global_config.namespace = namespace
 
     return global_config
+
+
+def resolve_workflow_pvc_name():
+    username = os.environ.get("JUPYTERHUB_USER")
+    if not username:
+        return os.environ.get("ARGO_WORKFLOW_PVC_NAME", "")
+
+    token_path = Path(KUBERNETES_SERVICE_ACCOUNT_TOKEN)
+    if not token_path.is_file():
+        return os.environ.get("ARGO_WORKFLOW_PVC_NAME", "")
+
+    namespace = os.environ.get("ARGO_NAMESPACE") or os.environ.get(
+        "POD_NAMESPACE", "default"
+    )
+    host = os.environ.get("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+    label_selector = quote(f"hub.jupyter.org/username={username}", safe="")
+    url = (
+        f"https://{host}:{port}/api/v1/namespaces/{namespace}/persistentvolumeclaims"
+        f"?labelSelector={label_selector}"
+    )
+    ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    http = urllib3.PoolManager(cert_reqs="CERT_REQUIRED", ca_certs=ca_path)
+    response = http.request(
+        "GET",
+        url,
+        headers={"Authorization": f"Bearer {token_path.read_text().strip()}"},
+    )
+    if response.status != 200:
+        raise RuntimeError(
+            f"Failed to resolve the user PVC: Kubernetes API returned {response.status}"
+        )
+
+    items = json.loads(response.data.decode("UTF-8")).get("items", [])
+    if len(items) != 1:
+        raise RuntimeError(
+            f"Expected one PVC for JupyterHub user {username!r}, found {len(items)}"
+        )
+    return items[0]["metadata"]["name"]
 
 
 def gen_workflow_name(job_id: str):
