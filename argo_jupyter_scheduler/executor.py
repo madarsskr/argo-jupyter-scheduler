@@ -436,12 +436,12 @@ class ArgoExecutor(ExecutionManager):
         successful = "{{steps.main.status}} == Succeeded"
 
         with CronWorkflow(
-            name=gen_cron_workflow_name(job_definition_id),
+            name=gen_cron_workflow_name(job_definition_id, job.name),
             entrypoint="steps",
             schedule=schedule,
             timezone=timezone,
             starting_deadline_seconds=0,
-            concurrency_policy="Replace",
+            concurrency_policy="Forbid",
             successful_jobs_history_limit=4,
             failed_jobs_history_limit=4,
             cron_suspend=suspend,
@@ -578,12 +578,32 @@ class ArgoExecutor(ExecutionManager):
 
         logger.info("deleting cron workflow...")
 
+        with self.db_session() as session:
+            job_definition = (
+                session.query(JobDefinition)
+                .filter(JobDefinition.job_definition_id == job_definition_id)
+                .first()
+            )
+        names = [
+            gen_cron_workflow_name(
+                job_definition_id,
+                job_definition.name if job_definition else "",
+            ),
+            f"job-def-{job_definition_id}",
+        ]
+
         try:
             wfs = WorkflowsService()
-            wfs.delete_cron_workflow(
-                name=gen_cron_workflow_name(job_definition_id),
-                namespace=global_config.namespace,
-            )
+            for name in dict.fromkeys(names):
+                try:
+                    wfs.delete_cron_workflow(
+                        name=name,
+                        namespace=global_config.namespace,
+                    )
+                    break
+                except Exception as e:
+                    if name == names[-1]:
+                        raise e
         except Exception as e:
             # Hera-Workflows raises generic Exception for all errors :(
             if str(e).startswith("Server returned status code"):
@@ -645,8 +665,14 @@ class ArgoExecutor(ExecutionManager):
         try:
             w.update()
         except Exception as e:
-            # Hera-Workflows raises generic Exception for all errors :(
-            if str(e).startswith("Server returned status code"):
+            legacy_name = f"job-def-{job_definition_id}"
+            if w.name != legacy_name:
+                w.name = legacy_name
+                try:
+                    w.update()
+                except Exception:
+                    raise e
+            elif str(e).startswith("Server returned status code"):
                 logger.info(e)
             else:
                 raise e

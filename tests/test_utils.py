@@ -5,6 +5,7 @@ import pytest
 from argo_jupyter_scheduler.executor import main_container
 from argo_jupyter_scheduler.utils import (
     authenticate,
+    gen_cron_workflow_name,
     gen_papermill_command_input,
     gen_pod_spec_patch,
 )
@@ -118,3 +119,12 @@ def test_main_container_uses_configured_image():
     )
 
     assert container.image == "registry.example/notebook:1"
+
+
+def test_gen_cron_workflow_name_includes_definition_name():
+    assert (
+        gen_cron_workflow_name(
+            "d66120ed-eed8-47ad-9c9e-ef58ffd1a1a3", "Scheduler Test"
+        )
+        == "job-def-scheduler-test-d66120ed-eed8"
+    )

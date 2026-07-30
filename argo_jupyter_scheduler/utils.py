@@ -90,8 +90,15 @@ def gen_workflow_name(job_id: str):
     return f"job-{job_id}"
 
 
-def gen_cron_workflow_name(job_definition_id: str):
-    return f"job-def-{job_definition_id}"
+def gen_cron_workflow_name(job_definition_id: str, job_definition_name: str = ""):
+    name = re.sub(r"[^a-z0-9-]+", "-", job_definition_name.lower()).strip("-")
+    suffix = job_definition_id[:13]
+    prefix = f"job-def-{name}-" if name else "job-def-"
+    if name:
+        max_name_length = 63 - len("job-def-") - len(suffix) - 2
+        name = name[:max_name_length].rstrip("-")
+        prefix = f"job-def-{name}-" if name else "job-def-"
+    return f"{prefix}{suffix}"
 
 
 def gen_default_output_path(input_path: str):
