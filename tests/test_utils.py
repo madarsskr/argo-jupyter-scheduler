@@ -10,6 +10,7 @@ from argo_jupyter_scheduler.utils import (
     gen_papermill_command_input,
     gen_pod_spec_patch,
     resolve_workflow_pvc_name,
+    resolve_workflow_pod_affinity,
 )
 
 
@@ -108,6 +109,29 @@ def test_gen_pod_spec_patch_for_jupyterhub():
     )
 
 
+def test_gen_pod_spec_patch_includes_pod_affinity():
+    affinity = {
+        "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                    "labelSelector": {
+                        "matchLabels": {
+                            "hub.jupyter.org/username": "alice",
+                            "component": "singleuser-server",
+                            "release": "jupyterhub",
+                        }
+                    },
+                    "topologyKey": "kubernetes.io/hostname",
+                }
+            ]
+        }
+    }
+
+    patch = json.loads(gen_pod_spec_patch(pod_affinity=affinity))
+
+    assert patch["affinity"] == affinity
+
+
 def test_main_container_uses_configured_image():
     container = main_container(
         job=type("Job", (), {"runtime_environment_name": "default"})(),
@@ -156,3 +180,66 @@ def test_resolve_workflow_pvc_name_from_user_label(tmp_path):
         str(token_path),
     ), patch("argo_jupyter_scheduler.utils.urllib3.PoolManager", return_value=pool):
         assert resolve_workflow_pvc_name() == "claim-alice---abcd1234"
+
+
+def test_resolve_workflow_pod_affinity_from_running_user_pod(tmp_path):
+    token_path = tmp_path / "token"
+    token_path.write_text("token")
+    pool = Mock()
+    pool.request.return_value.status = 200
+    pool.request.return_value.data = json.dumps(
+        {
+            "items": [
+                {
+                    "metadata": {
+                        "labels": {
+                            "hub.jupyter.org/username": "alice",
+                            "hub.jupyter.org/servername": "",
+                            "component": "singleuser-server",
+                            "release": "jupyterhub",
+                        }
+                    },
+                    "status": {"phase": "Running"},
+                }
+            ]
+        }
+    ).encode()
+
+    with patch.dict(
+        "os.environ",
+        {
+            "JUPYTERHUB_USER": "alice",
+            "JUPYTERHUB_SERVER_NAME": "",
+            "ARGO_NAMESPACE": "jupyterhub",
+            "KUBERNETES_SERVICE_HOST": "kubernetes.default.svc",
+            "KUBERNETES_SERVICE_PORT_HTTPS": "443",
+        },
+        clear=False,
+    ), patch(
+        "argo_jupyter_scheduler.utils.KUBERNETES_SERVICE_ACCOUNT_TOKEN",
+        str(token_path),
+    ), patch("argo_jupyter_scheduler.utils.urllib3.PoolManager", return_value=pool):
+        affinity = resolve_workflow_pod_affinity()
+
+    assert affinity["podAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+
+
+def test_resolve_workflow_pod_affinity_is_empty_without_running_user_pod(tmp_path):
+    token_path = tmp_path / "token"
+    token_path.write_text("token")
+    pool = Mock()
+    pool.request.return_value.status = 200
+    pool.request.return_value.data = json.dumps({"items": []}).encode()
+
+    with patch.dict(
+        "os.environ",
+        {
+            "JUPYTERHUB_USER": "alice",
+            "ARGO_NAMESPACE": "jupyterhub",
+        },
+        clear=False,
+    ), patch(
+        "argo_jupyter_scheduler.utils.KUBERNETES_SERVICE_ACCOUNT_TOKEN",
+        str(token_path),
+    ), patch("argo_jupyter_scheduler.utils.urllib3.PoolManager", return_value=pool):
+        assert resolve_workflow_pod_affinity() is None

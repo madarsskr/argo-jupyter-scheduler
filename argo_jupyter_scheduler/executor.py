@@ -61,6 +61,7 @@ class ArgoExecutor(ExecutionManager):
         workflow_service_account_name: str = "",
         workflow_pvc_name: str = "",
         workflow_pvc_mount_path: str = "/home/jovyan",
+        workflow_pod_affinity=None,
     ):
         self.root_dir = root_dir
         self.db_url = db_url
@@ -78,6 +79,7 @@ class ArgoExecutor(ExecutionManager):
         self.workflow_service_account_name = workflow_service_account_name
         self.workflow_pvc_name = workflow_pvc_name
         self.workflow_pvc_mount_path = workflow_pvc_mount_path
+        self.workflow_pod_affinity = workflow_pod_affinity
 
         if (
             not self.job_id
@@ -123,6 +125,7 @@ class ArgoExecutor(ExecutionManager):
                     workflow_service_account_name=self.workflow_service_account_name,
                     workflow_pvc_name=self.workflow_pvc_name,
                     workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                    workflow_pod_affinity=self.workflow_pod_affinity,
                 )
 
             elif self.action == WorkflowActionsEnum.delete:
@@ -150,6 +153,7 @@ class ArgoExecutor(ExecutionManager):
                     workflow_service_account_name=self.workflow_service_account_name,
                     workflow_pvc_name=self.workflow_pvc_name,
                     workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                    workflow_pod_affinity=self.workflow_pod_affinity,
                 )
             elif self.action == WorkflowActionsEnum.update:
                 self.update_cron_workflow(
@@ -161,6 +165,7 @@ class ArgoExecutor(ExecutionManager):
                     active=self.active,
                     db_url=self.db_url,
                     use_conda_store_env=self.use_conda_store_env,
+                    workflow_pod_affinity=self.workflow_pod_affinity,
                 )
 
             elif self.action == WorkflowActionsEnum.delete:
@@ -217,6 +222,7 @@ class ArgoExecutor(ExecutionManager):
         workflow_service_account_name: str = "",
         workflow_pvc_name: str = "",
         workflow_pvc_mount_path: str = "/home/jovyan",
+        workflow_pod_affinity=None,
     ):
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
@@ -263,6 +269,7 @@ class ArgoExecutor(ExecutionManager):
                 service_account_name=workflow_service_account_name,
                 pvc_name=workflow_pvc_name,
                 pvc_mount_path=workflow_pvc_mount_path,
+                pod_affinity=workflow_pod_affinity,
             ),
         ) as w:
             main = main_container(
@@ -396,6 +403,7 @@ class ArgoExecutor(ExecutionManager):
         workflow_service_account_name: str = "",
         workflow_pvc_name: str = "",
         workflow_pvc_mount_path: str = "/home/jovyan",
+        workflow_pod_affinity=None,
     ):
         input_path = staging_paths["input"]
         log_path = gen_log_path(input_path)
@@ -457,6 +465,7 @@ class ArgoExecutor(ExecutionManager):
                 service_account_name=workflow_service_account_name,
                 pvc_name=workflow_pvc_name,
                 pvc_mount_path=workflow_pvc_mount_path,
+                pod_affinity=workflow_pod_affinity,
             ),
         ) as cwf:
             main = main_container(
@@ -553,6 +562,7 @@ class ArgoExecutor(ExecutionManager):
         workflow_service_account_name: str = "",
         workflow_pvc_name: str = "",
         workflow_pvc_mount_path: str = "/home/jovyan",
+        workflow_pod_affinity=None,
     ):
         authenticate()
 
@@ -572,6 +582,7 @@ class ArgoExecutor(ExecutionManager):
             workflow_service_account_name=workflow_service_account_name,
             workflow_pvc_name=workflow_pvc_name,
             workflow_pvc_mount_path=workflow_pvc_mount_path,
+            workflow_pod_affinity=workflow_pod_affinity,
         )
 
         w.create()
@@ -624,6 +635,7 @@ class ArgoExecutor(ExecutionManager):
         workflow_service_account_name: str = "",
         workflow_pvc_name: str = "",
         workflow_pvc_mount_path: str = "/home/jovyan",
+        workflow_pod_affinity=None,
     ):
         authenticate()
 
@@ -656,6 +668,7 @@ class ArgoExecutor(ExecutionManager):
             workflow_service_account_name=workflow_service_account_name,
             workflow_pvc_name=workflow_pvc_name,
             workflow_pvc_mount_path=workflow_pvc_mount_path,
+            workflow_pod_affinity=workflow_pod_affinity,
         )
 
         try:

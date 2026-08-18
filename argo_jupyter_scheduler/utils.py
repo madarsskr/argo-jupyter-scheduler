@@ -129,6 +129,85 @@ def resolve_workflow_pvc_name():
     return items[0]["metadata"]["name"]
 
 
+def resolve_workflow_pod_affinity():
+    """Prefer the active user's notebook node for RWO PVC compatibility."""
+    username = os.environ.get("JUPYTERHUB_USER")
+    token_path = Path(KUBERNETES_SERVICE_ACCOUNT_TOKEN)
+    if not username or not token_path.is_file():
+        return None
+
+    namespace = os.environ.get("ARGO_NAMESPACE") or os.environ.get(
+        "POD_NAMESPACE", "default"
+    )
+    host = os.environ.get("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+    label_selector = quote(
+        ",".join(
+            [
+                f"hub.jupyter.org/username={username}",
+                "component=singleuser-server",
+                "release=jupyterhub",
+            ]
+        ),
+        safe="",
+    )
+    url = (
+        f"https://{host}:{port}/api/v1/namespaces/{namespace}/pods"
+        f"?labelSelector={label_selector}"
+    )
+    ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    http = urllib3.PoolManager(
+        cert_reqs="CERT_REQUIRED",
+        ca_certs=ca_path,
+        timeout=urllib3.Timeout(connect=2.0, read=5.0),
+    )
+    response = http.request(
+        "GET",
+        url,
+        headers={"Authorization": f"Bearer {token_path.read_text().strip()}"},
+    )
+    if response.status != 200:
+        raise RuntimeError(
+            f"Failed to resolve the user pod: Kubernetes API returned {response.status}"
+        )
+
+    server_name = os.environ.get("JUPYTERHUB_SERVER_NAME", "")
+    items = json.loads(response.data.decode("UTF-8")).get("items", [])
+    running_pods = [
+        item
+        for item in items
+        if item.get("status", {}).get("phase") == "Running"
+        and item.get("metadata", {}).get("labels", {}).get(
+            "hub.jupyter.org/servername", ""
+        )
+        == server_name
+    ]
+    if len(running_pods) > 1:
+        raise RuntimeError(
+            f"Expected at most one running notebook pod for JupyterHub user {username!r}, "
+            f"found {len(running_pods)}"
+        )
+    if not running_pods:
+        return None
+
+    return {
+        "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                    "labelSelector": {
+                        "matchLabels": {
+                            "hub.jupyter.org/username": username,
+                            "component": "singleuser-server",
+                            "release": "jupyterhub",
+                        }
+                    },
+                    "topologyKey": "kubernetes.io/hostname",
+                }
+            ]
+        }
+    }
+
+
 def gen_workflow_name(job_id: str):
     return f"job-{job_id}"
 
@@ -185,6 +264,7 @@ def gen_pod_spec_patch(
     service_account_name: str = "",
     pvc_name: str = "",
     pvc_mount_path: str = "/home/jovyan",
+    pod_affinity=None,
 ):
     """Build an optional pod patch for non-Nebari workflow deployments."""
     patch = {}
@@ -209,6 +289,9 @@ def gen_pod_spec_patch(
                 "persistentVolumeClaim": {"claimName": pvc_name},
             }
         ]
+
+    if pod_affinity:
+        patch["affinity"] = pod_affinity
 
     return json.dumps(patch) if patch else None
 

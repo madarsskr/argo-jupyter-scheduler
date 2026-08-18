@@ -33,6 +33,7 @@ from argo_jupyter_scheduler.utils import (
     authenticate,
     gen_cron_workflow_name,
     resolve_workflow_pvc_name,
+    resolve_workflow_pod_affinity,
     setup_logger,
 )
 
@@ -121,11 +122,13 @@ class ArgoScheduler(Scheduler):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.workflow_pod_affinity = None
         Thread(target=self._reconcile_active_job_definitions, daemon=True).start()
 
     def _ensure_workflow_pvc_name(self):
         if not self.workflow_pvc_name:
             self.workflow_pvc_name = resolve_workflow_pvc_name()
+        self.workflow_pod_affinity = resolve_workflow_pod_affinity()
 
     def _reconcile_active_job_definitions(self):
         try:
@@ -178,6 +181,7 @@ class ArgoScheduler(Scheduler):
                         workflow_service_account_name=self.workflow_service_account_name,
                         workflow_pvc_name=self.workflow_pvc_name,
                         workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                        workflow_pod_affinity=self.workflow_pod_affinity,
                     ).process
                 ).start()
         except Exception:
@@ -232,6 +236,7 @@ class ArgoScheduler(Scheduler):
                     workflow_service_account_name=self.workflow_service_account_name,
                     workflow_pvc_name=self.workflow_pvc_name,
                     workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                    workflow_pod_affinity=self.workflow_pod_affinity,
                 ).process
             )
             p.start()
@@ -371,6 +376,7 @@ class ArgoScheduler(Scheduler):
                     workflow_service_account_name=self.workflow_service_account_name,
                     workflow_pvc_name=self.workflow_pvc_name,
                     workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                    workflow_pod_affinity=self.workflow_pod_affinity,
                 ).process
             )
             p.start()
@@ -447,6 +453,7 @@ class ArgoScheduler(Scheduler):
                     workflow_service_account_name=self.workflow_service_account_name,
                     workflow_pvc_name=self.workflow_pvc_name,
                     workflow_pvc_mount_path=self.workflow_pvc_mount_path,
+                    workflow_pod_affinity=self.workflow_pod_affinity,
                 ).process
             )
             p.start()
